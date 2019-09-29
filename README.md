@@ -22,7 +22,7 @@ the resizing jobs for the images.  Otherwise it would be better to just
 request the sizes from flickr using the API.  Resizing is not actually
 necessary as Flickr has alread done that work.
  
-## initial thoughts.
+## initial thoughts and information.
 
 The method used for resizing is not important. A webservice or one of many clojure libraries can be
 used.  Likewise the server side does not seem to be so important, as it is possible to get an endpoint
@@ -33,7 +33,7 @@ For me, a project like this is meant for exploration and learning. I've done a l
 [spec](https://clojure.org/guides/spec), so that seems like a good choice
 if for only that reason.  I've done simple compojure servers before, I like compojure, and I like
 using swagger for documentation purposes. I've not used [compojure-api](https://github.com/metosin/compojure-api) which has both and with the
-the new [2.0 alpha](https://github.com/metosin/c2) version it is possible to use spec instead of schema, so why not.
+the new [2.0 alpha](https://github.com/metosin/c2) version it is possible to use spec or schema, so why not.
 
 Finally, I want this to be a system which can grow beyond it's simple beginnings. To that end it should
 use either [component](https://github.com/stuartsierra/component) or [mount](https://github.com/tolitius/mount). I am agnostic about the two.  I used component in it's early days
@@ -46,8 +46,9 @@ definitions.  Component also makes it easier to test by allowing the creation of
 I would like for this to be project that is flexible enough to change when the realization that
 the original request is not particularly useful. It's not that the request is horribly flawed, 
 it really depends upon the goals of the project. For someone else, it may be they just want to 
-see how to handle the resizing of multiple images using channels and threads. But the reality of
-using this application might not be ideal. But a good core.async experiment at any rate.
+see how to handle the resizing of multiple images using channels, processes and threads. But the 
+reality of using this application might not be ideal. But it could be a good core.async experiment 
+at any rate.
 
 It seems that the user experience for this might not be ideal.
 The request is going to be slow if it has to fetch and resize the most recent images
@@ -96,29 +97,73 @@ not great. The difference in architecture is.
 
 ## A specification.
 
-This project seems to need at least three components. A fetcher, a worker and a server.
+This project seems to need at least three components. A fetcher, a worker
+and a server. I would add a fourth, a durable queue. [factual's
+durable queue](https://github.com/Factual/durable-queue) seems
+like good place to start and there is a [ready made component
+here.](http://github.com/danielsz/system)
+
+For future growth of the project the queue is the key.  Everyone will
+want to talk to it. The fetcher wants to give work to the resize worker,
+The worker to get work and the server to request resizes of images we
+already have.  Having a component for the queue means we can include
+that in any subsystem / microservice we deside to create, and it also
+allows us to swap it out for a different implementation just by changing
+the component system to use an alternate component which implements a
+different type of queue.
 
 ### Fetcher
  The fetcher is a simple component which only fetches the image
  metadata and the original image that it points to.
  
  If the fetcher is running in a polling fashion, it should 
- start, on compnonent start, a thread which watches a channel for requests 
- and another channel for a *stop* for graceful shutdown.
+ start, on compnonent start, a process (go loop) which watches a 
+ channel for requests and another channel for a *stop* for graceful 
+ shutdown. Writing nice core.async components is a well known pattern.
  
- The image should use a filename like so. _<image-id>.original.<format-ext>_
-
- Get the list of recent image metadata from flicker and
+ The job of the fetcher is to get the list of recent image metadata from flicker and
  convert it to a list of image metadata records, then
- fetch and save the original image.
- If options were given for resizing merge those values
- into the resizes vector in each metadata record.
- Write the metadata record to the work directory.
- The naming should be _<image-id>.edn_
+ fetch and give the original sized image to the database component to be saved
+ in the _images-path_.
+ 
+ If options were given for resizing those values
+ should be put into the resizes vector in each metadata record.
+ Give each meta data record to the queue component.
 
  The image metadata record format should be specified in spec
- and is a reflection of the entry record retrieved from Flickr, but with the
- following additional fields.
+ and is a reflection of the entry record retrieved from Flickr,
+ like this one. 
+ 
+ 
+```
+<entry>
+    <title>Rainbow</title>
+    <link rel="alternate" type="text/html" href="https://www.flickr.com/photos/amancalledalex/48812423833/"/>
+    <id>tag:flickr.com,2005:/photo/48812423833</id>
+    <published>2019-09-29T07:35:34Z</published>
+    <updated>2019-09-29T07:35:34Z</updated>
+    <flickr:date_taken>2019-09-27T18:10:07-08:00</flickr:date_taken>
+    <dc:date.Taken>2019-09-27T18:10:07-08:00</dc:date.Taken>
+    <content type="html">			&lt;p&gt;&lt;a href=&quot;https://www.flickr.com/people/amancalledalex/&quot;&gt;amancalledalex&lt;/a&gt; posted a photo:&lt;/p&gt;
+	
+&lt;p&gt;&lt;a href=&quot;https://www.flickr.com/photos/amancalledalex/48812423833/&quot; title=&quot;Rainbow&quot;&gt;&lt;img src=&quot;https://live.staticflickr.com/65535/48812423833_d54f886cbb_m.jpg&quot; width=&quot;240&quot; height=&quot;180&quot; alt=&quot;Rainbow&quot; /&gt;&lt;/a&gt;&lt;/p&gt;
+
+</content>
+    <author>
+      <name>amancalledalex</name>
+      <uri>https://www.flickr.com/people/amancalledalex/</uri>
+      <flickr:nsid>39829646@N02</flickr:nsid>
+      <flickr:buddyicon>https://combo.staticflickr.com/pw/images/buddyicon10.png#39829646@N02</flickr:buddyicon>
+    </author>
+    <link rel="enclosure" type="image/jpeg" href="https://live.staticflickr.com/65535/48812423833_d54f886cbb_b.jpg" />
+    <category term="" scheme="https://www.flickr.com/photos/tags/" />
+    <displaycategories>
+            </displaycategories>
+    </entry>
+```
+
+ The following additional fields are added to the record.
+
  
   * `:local-path nil` - this is the location of the image's folder.
   as determined by the CLI's _image-path_ option using the format _<path>/<image id>_
@@ -131,91 +176,98 @@ This project seems to need at least three components. A fetcher, a worker and a 
  The fetcher will be told which sizes need to be created, either on the CLI or
  by the server when the server requests a new fetch.
   
- The fetcher can work in one of two modes. By request or in a continuous polling mode.
+ The fetcher should be able to work in one of two modes. By request or in a continuous polling mode.
   
- It is possible, that the fetcher could use a channel and threads to retrieve the original images
+ It is possible, that the fetcher could use a channel and go-loop to retrieve the original images
  and write them to the local path. But that might not be nice etiquete for Flickr. If it does
- use a channel for the goal of spawning multiple fetching threads, it should also have a 
+ use a go-loop for the goal of spawning multiple fetching processes, it should also have a 
  secondary channel *stop* so that the component can be shutdown gracefully.
+ Maybe 8 processes is not so bad...
   
  Upon successful retrieval and writing of the original image file, the image entry should
- reflect the local path and the sizes vector should consist of _:original_  ie. `:sizes [:original]`
- If given on the command line or by the server's request , `:sizes []` may also have
- other entries.  These records should then be written as edn files to the systems work
- directory.  And the worker component should be asked to do work if it is not
- running as a micro service.
+ reflect the local path of the image and the sizes vector should consist of _:original_  
+ ie. `:sizes [:original]` If given on the command line or by the server's request , 
+ `:sizes []` may also have other entries. These metadata records should then
+ be given to the queue component for the worker to create the resized images.
 
- It would also be possible to put them in a channel for the worker to
- recieve. Which is pretty nice, The server could even use the same channel
- to ask for more sizes.
+### Queue
 
- But channels imply that they are related components in the same executable. 
- So maybe not at this time. The file system is simple and allows for separate
- services. Filesystem folders are simple and it would be easy to replace them 
- with a durable queue later.
+   A factual durable queue component. 
+   Although it is not complicated, [A pre-built component can be found here](http://github.com/danielsz/system) 
 
+### Database
+
+I am not sure that managing both the metadata files and the image files
+should be the responsibility of this component. But at least now, this 
+makes some sense and it is simple enough.
+
+When giving an image to save,
+the database component should write the image to it's _local-path_ in the
+_images-path_ The image should use a filename like so. _<image-id>.original.<format-ext>_
+
+A file based database of image metadata files. I simple component which can
+take image meta data files for storage and give the most recent image metadata entries
+in response to a request.
+
+Something that might be fun would be to load the metadata files into a datascript
+db at component initialization. That could provide some fun things to play with.
+
+Optionally I suppose we could give it the responsibility of returning images when
+asked for.
+
+ The final database folder should consist of edn files named after the image
+ id.  All images will resized in an images _local-path_. Image names should be 
+ of the format _<id>.<size>.<format>_
+
+ The resulting meta data record should be written to the applications _image-db_ folder
+ as indicated by the CLI option `database-path`. This is a point of future improvement either
+ by replacement with a real DB or sub-division of folders by some date interval.
+
+A request for recent images should result in the last 100 images in the database.
+this is the same default as Flickr. Flickr has a maximum of 500 images which is 
+also probably a good limit.
 
 ### Worker
 
  By the time we get here, we have the original image in it's folder and a nice 
  metadata record about the image.
 
- If the worker is running in a polling fashion, it should 
- start, on compnonent start, a thread which watches a channel for requests 
- and another channel for a *stop* for graceful shutdown.
+ If the worker should probably just be a go-loop which takes from the queue
+ component.  It is probably sufficient to call a function for each image which
+ then does a pmap to get the resized images. I would keep these pure. and then
+ write the images and update the metadata record and write it to the database
+ all in the same function, to isolate the side effects and improve testability.
  
- But that all depends on how it is decided to do the plumbing here. It may
- only need the channel for a graceful stop if all it does is watch the
- work folder/queue.
-
+ Like the fetcher in polling mode, the worker will need a channel for a *stop* 
+ signal to enable a graceful shutdown.
+ 
  This component only needs to create more images sizes as requested 
- by the image meta data records in the application's work directory. 
+ by the metadata entries in the queue component.
  If the resizes vector in an image metadata file is empty there is nothing to
- do but write the metadata file to the database directory, and remove it from
- the work directory.
-
- If running as a micro-service it should continually look in the application's 
- work folder to see if there is any work to be done.
+ do but write the metadata file to the database directory.
  
- It should also be possible to tell the component to look for work.
-
- It should load the work records and place them on a channel for multiple resizing 
- threads to access. Each of these threads may spawn additional resizing threads as
- needed.  The return will be a image meta data record with updated sizes and resizes entries
- and the side effect is that those images will now reside in the image's _local-path_ folder
- inside the _images-path_ folder as specified by the CLI.
- Image names should be of the format _<id>.<size>.<format>_
-
- The worker will put the records on a channel and spawn multiple threads as needed
- to create the new resized images. The labeled sizes corresponding to the following.
+ On error, the worker should do the appropriate things in signaling the queue
+ that the job failed for that entry.
+ 
+ In addition to arbitrary `[height width]` Possible resize values are the following.
  `:thumbnail = (150x150), :small = (1/4) :medium = (1/2) and :large = (3/4)`. 
  Each of these images should be written to the image's local path folder.
- The image's meta data record should be updated with the new sizes and if all is
+ 
+ Before sending the metadata entry to the database component, 
+ the image's meta data record should be updated with the new sizes and if all is
  successful the _resizes_ vector will be empty.
- 
- A secondary *stop* channel should be used for graceful shutdown of the worker component.
- 
- The resulting meta data record should be written to the applications _image-db_ folder
- as indicated by the CLI option `database-path`. This is a point of future improvement either
- by replacement with a real DB or sub-division of folders by some date interval.
 
 ### Server
-
- This component can work independently of the other two, simply
- by loading the meta data records and providing an interface to the images.
 
 This is pretty simple really.  Use compojure-api and spec to create a nice endpoint 
 with a nice swagger api document.
 The server should show the most recent images in the images directory. The server can 
-get the image metadata files from the database folder and then do what it wishes. 
-Sort, filter, display, etc.
+get the image metadata entries from database component and then do what it wishes. 
 
 Options to the end point are count and size. The possible
 sizes are thumbnail, small, medium, large, original or an arbitrary [height width].  
 if no quantity or size was given the server would simply get the 
-last 100 metadata records from the database folder. 100
-is the same default as Flickr. Flickr has a maximum of 500 images which is 
-also probably a good limit.
+last 100 metadata records from the database component. 
 
 It might be nice to render the meta data along with the images
 so that the links can be followed to the photographer among other things.
@@ -234,12 +286,13 @@ aspect ratio in a somewhat random way, which the _:thumbnail_ size certainly doe
 I've added the small, medium, large sizes in order to allow resizing which honors
 the original aspect ratio of the images.
  
-Another method would be to let the fetcher and worker run in a polling mode,
-possibly as separate micro-services.
- 
+Another method would be to let the fetcher run in a polling mode such that images are
+constantly being retrieved over a time interval. In this way, everything is much simpler
+and server only needs to worry about serving whatever is already there. 
+
 In this situation the server only needs to know about the meta data records and show 
-the most recent images. If a size does not exist, the server can write the meta-data records 
-with the appropriate resize values to the work directory, and then wait
+the most recent images. If a size does not exist, the server can give the meta-data records 
+with the appropriate resize values to the queue component, and then wait
 for them to reappear in the database with their new sizes.
  
 The meta-data records have a lot of additional information which allow for
@@ -254,25 +307,28 @@ and makes it easy to make sub-commands which makes it easier to manage as a syst
 It includes basic logging options which work well with any logging system someone might wish for.
 Reasonable defaults should be used where appropriate.
 
+It is probably not necessary to create component level options for everything, but as the project 
+grows it does make good sense.
+
 #### Options
 
- * image-path
- * database-path
- * work-path
- * sizes <[:thumbnail :small :medium :large [x y] ...]>
+ * help      - automatic with clj-cli-ext.
  * log       - automatic with clj-cli-ext.
    * file
    * verbosity
- * help      - automatic with clj-cli-ext.
  * Fetcher
    * url 
    * timeout
    * polling on/off
     * interval <time in seconds between fetches>
+ * queue
+   * work-path
+ * database
+   * database-path
+   * image-path
  * Worker
-   * polling on/off
-     * interval <time in seconds between looking for work>
-     * process-count ?
+    * sizes <[:thumbnail :small :medium :large [x y] ...]>
+ * server
      
  
 ### Logging.
