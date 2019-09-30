@@ -52,7 +52,7 @@ bother me to pass the world around. Also there is enough other stuff
 to play with that it seems component is a good choice. I also like
 that components are easily composable such that a component could be
 easily replaced by a different implementation or the component system
-could be rearranged to create a family of microservices. definitions.
+could be rearranged to create a family of microservices. 
 Component also makes it easier to test by allowing the creation of
 alternative systems for testing.
 
@@ -74,19 +74,18 @@ from the endpoint.
 Requesting a size of height and width before knowing the size of each image is also going
 to introduce distortion as the aspect ratio of the variously sized images is lost.
 Maybe there should be an algorithm which chooses a size close to the requested size but preserves
-the aspect ratio. If that is a desire. Flickr decided to provide a set of specific sizes in it's 
-API, maybe that is partly why.
+the aspect ratio. Percentages would be better. 
 
 So really it's a more interesting problem than "just fetch a number of images from the recent 
-feed and convert them to the size I ask for, then show them to me." 
+feed, convert them to the size I ask for, then show them to me." 
 
 It would be better to ask "how can I retrieve the current feed and store the images, potentially
-with some common sizes, and give those to the server when it asks while also the allowing the server
+with some common sizes, and give those to the server when it asks while also allowing the server
 to spawn a new fetch or ask for some different sizes of images we already have." 
 
 And maybe, we give just the image metadata to the server, and then it decides which 
 images and sizes it wants based on that most recent list of images. Choices to keep in mind.
-Potentially the server is just going to give the response to front-end ui, unless it is
+Potentially the server is just going to give the response to front-end ui, unless it _is_
 the front-end UI. Future choices to think about.
 
 The ability to continously fetch and create various sized images in the background, even if it
@@ -106,11 +105,12 @@ Another feature - save tags.  Let the database component take care of that.
 Granted the UI would become more complex, with the option to view different sized files or
 generate new sizes.  But then we'll want filtering and searching and what not, so this project
 might as well provide a solid foundation for future growth. The difference in code is
-not great. The difference in architecture from a server that fetchs and displays images is.
+not great. The difference in architecture from a server that just fetchs and displays images is.
 
  *The request is for this*
  * Fetch images when asked
  * Resize images only to the size asked for.
+ * display the number of images in the size asked for.
  
  *This design provides for this*
  * Fetch images by request or continually.
