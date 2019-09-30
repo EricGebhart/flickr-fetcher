@@ -24,59 +24,82 @@ necessary as Flickr has alread done that work.
  
 ## initial thoughts and information.
 
-The method used for resizing is not important. A webservice or one of many clojure libraries can be
-used.  Likewise the server side does not seem to be so important, as it is possible to get an endpoint
-with these simple requirements running quite quickly with less than 100 lines of code.    
+The method used for resizing is not important. A webservice or one of many
+clojure libraries can be used.  Likewise the server side does not seem to
+be so important, as it is possible to get an endpoint with these simple
+requirements running quite quickly with less than 100 lines of code.
 
 For me, a project like this is meant for exploration and learning. I've done a lot of work with
-[prismatic/plumatic schema](https://github.com/plumatic/schema) and I'm interested in learning more about 
-[spec](https://clojure.org/guides/spec), so that seems like a good choice
-if for only that reason.  I've done simple compojure servers before, I like compojure, and I like
-using swagger for documentation purposes. I've not used [compojure-api](https://github.com/metosin/compojure-api) which has both and with the
-the new [2.0 alpha](https://github.com/metosin/c2) version it is possible to use spec or schema, so why not.
+[prismatic/plumatic schema](https://github.com/plumatic/schema) and I'm
+interested in learning more about [spec](https://clojure.org/guides/spec),
+so that seems like a good choice if for only that reason.
+I've done simple compojure servers before, I like compojure, and
+I like using swagger for documentation purposes. I've not used
+[compojure-api](https://github.com/metosin/compojure-api) which has
+both and with the the new [2.0 alpha](https://github.com/metosin/c2)
+version it is possible to use spec or schema, so why not.
 
-Finally, I want this to be a system which can grow beyond it's simple beginnings. To that end it should
-use either [component](https://github.com/stuartsierra/component) or [mount](https://github.com/tolitius/mount). I am agnostic about the two.  I used component in it's early days
-and I like it just fine. It doesn't bother me to pass the world around.  I also like that components are
-easily composable such that if I decide later that this should be a family of microservices running independently it would be easy to make that happen with some component modifications and set of different system 
-definitions.  Component also makes it easier to test by allowing the creation of alternative systems for testing.
+Finally, I want this to be a system which can grow beyond
+it's simple beginnings. To that end it should use either
+[component](https://github.com/stuartsierra/component) or
+[mount](https://github.com/tolitius/mount). I am agnostic about the two.
+I used component in it's early days and I like it just fine. It doesn't
+bother me to pass the world around. Also there is enough other stuff
+to play with that it seems component is a good choice. I also like
+that components are easily composable such that a component could be
+easily replaced by a different implementation or the component system
+could be rearranged to create a family of microservices. definitions.
+Component also makes it easier to test by allowing the creation of
+alternative systems for testing.
 
 ## Questioning the request and Enabling more flexibility
 
-I would like for this to be project that is flexible enough to change when the realization that
-the original request is not particularly useful. It's not that the request is horribly flawed, 
-it really depends upon the goals of the project. For someone else, it may be they just want to 
-see how to handle the resizing of multiple images using channels, processes and threads. But the 
-reality of using this application might not be ideal. But it could be a good core.async experiment 
-at any rate.
+I would like for this to be project that is flexible enough to change and grow beyond 
+the original request. 
 
-It seems that the user experience for this might not be ideal.
+It seems that the user experience for this might not be ideal. But it is a fun project
+to experiment with core.async, threading, queues, file blobs, a database, spec/schema
+a server endpoint and even a UI using clojurescript and react if desired.
+
 The request is going to be slow if it has to fetch and resize the most recent images
-every time someone asks for them.  Maybe there could be some cacheing system so it
+every time someone asks for them. Displaying what we have while new things come in is going
+to be important. it would also be nice if there was a way to not repeat work, although the
 doesn't have to repeat all the work, even though it might if someone asks for another size.
-Why not just create a better architecture to answer a bigger question while answering this
-simpler but actually more difficult question ?  It's only more difficult if I were to
-restrict myself to answering this challenge exacly within the request.
 
-If asked to resize all 100 of the most recent images to some odd size that will be extra slow
-and also cause distortion as the aspect ratio of the variously sized images is lost.
+Requesting a size of height and width before knowing the size of each image is also going
+to introduce distortion as the aspect ratio of the variously sized images is lost.
+Maybe there should be an algorithm which chooses a size close to the requested size but preserves
+the aspect ratio. If that is a desire.
+
+So really it's a more interesting problem than "just fetch a number of images from the recent 
+feed and convert them to the size I ask for, then show them to me." 
+
+It would be better to ask "how can I retrieve the current feed and store the images, potentially
+with some common sizes, and give those to the server when it asks while also the allowing the server
+to spawn a new fetch or ask for some different sizes of images we already have." 
+
+And maybe, we give just the image metadata to the server, and then it decides which 
+images and sizes it wants based on that most recent list of images. Choices to keep in mind.
+Potentially the server just gives the response to front-end ui. Future choices to think about.
 
 The ability to continously fetch and create various sized images in the background, even if it
 only does it once a day (ie. do we really want to replicate the flickr feed in it's entirety?) 
-would provide better performance, similar results and a better user experience.
+would provide better performance, similar results and a better user experience. And an architecture
+capable of that should also be capable of fulfilling the original request without adding 
+complexity.
 
 Add an option to update now, or just increase the update frequency should be sufficient.
-And if we really want this thing to be a feed, turn the 3 components into micro-services
-and let them run. Maybe with multiple workers sharing the resizing efforts.
+And if we really want this thing to be a feed, turn the fetcher, worker and server components 
+into micro-services and let them run. Maybe with multiple workers sharing the resizing efforts.
 
 And if not, or that we really don't care to collect all that, ok. Add a roll off feature
 that removes older images that aren't flagged for saving in their meta-data files.
-Another feature - save tags.
+Another feature - save tags.  Let the database component take care of that.
 
 Granted the UI would become more complex, with the option to view different sized files or
 generate new sizes.  But then we'll want filtering and searching and what not, so this project
 might as well provide a solid foundation for future growth. The difference in code is
-not great. The difference in architecture is.
+not great. The difference in architecture from a server that fetchs and displays is.
 
  *The request is for this*
  * Fetch images when asked
@@ -87,51 +110,72 @@ not great. The difference in architecture is.
  * Automatically resize images after a fetch to any given variety or not.
  * Image sizes include :small, :medium and :large which preserve aspect ratio.
  * There is a :thumbnail image size of 150x150.
- * The fetcher, worker and server components can run idependantly as microservices or together
+ * Arbitrary sizes of height and width can also be specified.
+ * The fetcher, worker and server components could potentially be configured as microservices 
  as a system of components. If micro-services, the server might need a way to request new fetches.
  * The server can request a new fetch with new sizes 
  * The server can request new sizes for images already in the database.
- just by putting an images meta data file in the work queue folder with a resize value or values.
- * Image meta data is preserved so it can be used for a better UI in the future.
+ * Image metadata is used as a database which provides many potential possibilities.
+ * The system of 5 components is composable for easier testing, component replacement,
+ microservices or other improvements 
 
 
-## A specification.
+## Overview
 
-This project seems to need at least three components. A fetcher, a worker
-and a server. I would add a fourth, a durable queue. [factual's
-durable queue](https://github.com/Factual/durable-queue) seems
-like good place to start and there is a [ready made component
-here.](http://github.com/danielsz/system)
+This project seems to need at five components. Three main compontents A fetcher, a worker
+and a server, and two components which all of those potentially depend upon. A queue and a database. 
 
-For future growth of the project the queue is the key.  Everyone will
-want to talk to it. The fetcher wants to give work to the resize worker,
-The worker to get work and the server to request resizes of images we
-already have.  Having a component for the queue means we can include
-that in any subsystem / microservice we deside to create, and it also
-allows us to swap it out for a different implementation just by changing
-the component system to use an alternate component which implements a
-different type of queue.
+The queue is used by the fetcher to provide jobs to the worker. And also potentially by
+the server if the feature of resizing existing images is added.
+The queue could be just a folder of edn files and a bit of code. But it's probably easier
+and better to use something like [factual's durable queue](https://github.com/Factual/durable-queue).
+There is a [ready made component here.](http://github.com/danielsz/system)
+There are many other choices for queue implemntations available.
+
+The database should isolate the side effects of writing the images and the
+metadata, this will make testing of everything else much as easier as all
+functions elsewhere should be pure. It is used by everyone. The fetcher
+gives it the initial image and metadata. The worker gives it the newly
+resized images. The server requests metadata and images from the database.
+
+The implementation of the database component can start as two folders, one for metadata edn
+files and one with folders named by image id, one for each image.
+There is a lot of space for additional features here.  Archiving, automatic roll off (ie. delete 
+old images), flagging for saving, filtering, searching, a real database, etc. 
+
+For future growth of the project the queue and database are the keys. 
+If done well they can allow decoupling of the each of the services 
+into micro-services.  And certainly the ability to swap out one component for
+a new and improved component is a nice way to grow things.
+
+Ultimately each component can be it's own project and this project would simply
+be a component system configuration with a CLI, and new systems with similar needs could
+use these components as needed.
 
 ### Fetcher
- The fetcher is a simple component which only fetches the image
- metadata and the original image that it points to.
+ The fetcher is a simple component which fetches the recent feed, converts it
+ to clojuere data, then retrieves the original images.  If a count is given
+ limit the retrieval to that count. The default, like the flickr api should
+ be 100 with a maximum of 500. It should give the metadata and the images
+ to the database component. 
  
  If the fetcher is running in a polling fashion, it should 
  start, on compnonent start, a process (go loop) which watches a 
  channel for requests and another channel for a *stop* for graceful 
- shutdown. Writing nice core.async components is a well known pattern.
- 
- The job of the fetcher is to get the list of recent image metadata from flicker and
- convert it to a list of image metadata records, then
- fetch and give the original sized image to the database component to be saved
- in the _images-path_.
+ shutdown. Writing nice 
+ [core.async components](https://cb.codes/a-tutorial-of-stuart-sierras-component-for-clojure/) 
+ is a well known pattern.
+
+ The job of the fetcher is to get the list of recent image metadata from
+ the flickr feed and convert it to a list of image metadata records, then fetch
+ and give the metadata and original sized image to the database component to be saved.
  
  If options were given for resizing those values
  should be put into the resizes vector in each metadata record.
- Give each meta data record to the queue component.
+ Then give each metadata record to the queue component.
 
  The image metadata record format should be specified in spec
- and is a reflection of the entry record retrieved from Flickr,
+ and is a reflection of the image entry record retrieved from Flickr,
  like this one. 
  
  
@@ -164,36 +208,49 @@ different type of queue.
 
  The following additional fields are added to the record.
 
- 
-  * `:local-path nil` - this is the location of the image's folder.
-  as determined by the CLI's _image-path_ option using the format _<path>/<image id>_
   * `:resizes []`     - Sizes that need to be created from this image.
   * `:sizes []`       - Sizes that currently exist for this image. ie. 
   
  Sizes and resizes are vectors and can have any of the following as values. 
- `:thumbnail, :small, :medium, :large, :original` or any number of `[x y]`.
+ `:thumbnail, :small, :medium, :large, :original` or any number of `[<height> <width>]`.
   
- The fetcher will be told which sizes need to be created, either on the CLI or
+ The fetcher will be told which sizes need to be created, either by the CLI or
  by the server when the server requests a new fetch.
   
- The fetcher should be able to work in one of two modes. By request or in a continuous polling mode.
+ The fetcher should be able to work in one of two modes. By request or in a continuous polling mode
+ which may also need to handle a request.
   
- It is possible, that the fetcher could use a channel and go-loop to retrieve the original images
- and write them to the local path. But that might not be nice etiquete for Flickr. If it does
+ It is possible, that the fetcher could use a go-loop to retrieve the original images
+ and send them to the database. But that might not be nice etiquete for Flickr. If it does
  use a go-loop for the goal of spawning multiple fetching processes, it should also have a 
  secondary channel *stop* so that the component can be shutdown gracefully.
  Maybe 8 processes is not so bad...
   
- Upon successful retrieval and writing of the original image file, the image entry should
- reflect the local path of the image and the sizes vector should consist of _:original_  
+ Upon successful retrieval and writing of the original image file, 
+ image records should have a populated sizes vector of _:original_  
  ie. `:sizes [:original]` If given on the command line or by the server's request , 
- `:sizes []` may also have other entries. These metadata records should then
+ `:resizes []` may also have other entries. These metadata records should then
  be given to the queue component for the worker to create the resized images.
+ 
+ ### A different division of labor.
+
+ Another possible way to divide responsibilities is to let the database do the fetching
+ of the original file when it is requested.  I Like that as it simplifies the fetcher
+ and puts the responsibility of the saving and delivering the original image all in one
+ place.  ---  *Think on this, and Rewrite*
 
 ### Queue
 
-   A factual durable queue component. 
-   Although it is not complicated, [A pre-built component can be found here](http://github.com/danielsz/system) 
+A factual durable queue component. Although it is not complicated, 
+[A pre-built component can be found here](http://github.com/danielsz/system) 
+This component only needs to do it's job as queue.  Take image metadata files and
+give image meta data files in a way that is resiliant to worker failures.
+
+The fetcher and possible the server will give it image metadata records and the
+worker will take them.
+
+
+# Stopped here.........................................................
 
 ### Database
 
