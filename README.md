@@ -40,7 +40,11 @@ both and with the the new [2.0 alpha](https://github.com/metosin/c2)
 version it is possible to use spec or schema, so why not.
 
 Finally, I want this to be a system which can grow beyond
-it's simple beginnings. To that end it should use either
+it's simple beginnings. It would be easy to make an endpoint that
+fetched images and resized them and was not usable in any other way,
+with no ability to expand or be reused.
+
+To that end it should have composoble sub-systems. I could use either 
 [component](https://github.com/stuartsierra/component) or
 [mount](https://github.com/tolitius/mount). I am agnostic about the two.
 I used component in it's early days and I like it just fine. It doesn't
@@ -63,13 +67,15 @@ a server endpoint and even a UI using clojurescript and react if desired.
 
 The request is going to be slow if it has to fetch and resize the most recent images
 every time someone asks for them. Displaying what we have while new things come in is going
-to be important. it would also be nice if there was a way to not repeat work, although the
-doesn't have to repeat all the work, even though it might if someone asks for another size.
+to be important. It would also be nice if there was a way to not repeat work. That idea alone
+breaks the original request and makes it complicated unless the back backend is decoupled
+from the endpoint.
 
 Requesting a size of height and width before knowing the size of each image is also going
 to introduce distortion as the aspect ratio of the variously sized images is lost.
 Maybe there should be an algorithm which chooses a size close to the requested size but preserves
-the aspect ratio. If that is a desire.
+the aspect ratio. If that is a desire. Flickr decided to provide a set of specific sizes in it's 
+API, maybe that is partly why.
 
 So really it's a more interesting problem than "just fetch a number of images from the recent 
 feed and convert them to the size I ask for, then show them to me." 
@@ -80,7 +86,8 @@ to spawn a new fetch or ask for some different sizes of images we already have."
 
 And maybe, we give just the image metadata to the server, and then it decides which 
 images and sizes it wants based on that most recent list of images. Choices to keep in mind.
-Potentially the server just gives the response to front-end ui. Future choices to think about.
+Potentially the server is just going to give the response to front-end ui, unless it is
+the front-end UI. Future choices to think about.
 
 The ability to continously fetch and create various sized images in the background, even if it
 only does it once a day (ie. do we really want to replicate the flickr feed in it's entirety?) 
@@ -88,18 +95,18 @@ would provide better performance, similar results and a better user experience. 
 capable of that should also be capable of fulfilling the original request without adding 
 complexity.
 
-Add an option to update now, or just increase the update frequency should be sufficient.
+Add an option to update now, or just an increase in the update frequency should be sufficient.
 And if we really want this thing to be a feed, turn the fetcher, worker and server components 
 into micro-services and let them run. Maybe with multiple workers sharing the resizing efforts.
 
-And if not, or that we really don't care to collect all that, ok. Add a roll off feature
-that removes older images that aren't flagged for saving in their meta-data files.
+And if not, or that we really don't care to collect all that, ok. Perhaps we add a roll off 
+feature that removes older images that aren't flagged for saving in their meta-data files.
 Another feature - save tags.  Let the database component take care of that.
 
 Granted the UI would become more complex, with the option to view different sized files or
 generate new sizes.  But then we'll want filtering and searching and what not, so this project
 might as well provide a solid foundation for future growth. The difference in code is
-not great. The difference in architecture from a server that fetchs and displays is.
+not great. The difference in architecture from a server that fetchs and displays images is.
 
  *The request is for this*
  * Fetch images when asked
@@ -111,8 +118,7 @@ not great. The difference in architecture from a server that fetchs and displays
  * Image sizes include :small, :medium and :large which preserve aspect ratio.
  * There is a :thumbnail image size of 150x150.
  * Arbitrary sizes of height and width can also be specified.
- * The fetcher, worker and server components could potentially be configured as microservices 
- as a system of components. If micro-services, the server might need a way to request new fetches.
+ * The components could potentially be configured to run microservices. 
  * The server can request a new fetch with new sizes 
  * The server can request new sizes for images already in the database.
  * Image metadata is used as a database which provides many potential possibilities.
@@ -122,8 +128,9 @@ not great. The difference in architecture from a server that fetchs and displays
 
 ## Overview
 
-This project seems to need at five components. Three main compontents A fetcher, a worker
-and a server, and two components which all of those potentially depend upon. A queue and a database. 
+This project seems to need five components. A fetcher, a worker and a
+server, plus two more components which all of those potentially depend
+upon. A queue and a database.
 
 The queue is used by the fetcher to provide jobs to the worker. And also potentially by
 the server if the feature of resizing existing images is added.
@@ -131,12 +138,14 @@ The queue could be just a folder of edn files and a bit of code. But it's probab
 and better to use something like [factual's durable queue](https://github.com/Factual/durable-queue).
 There is a [ready made component here.](http://github.com/danielsz/system)
 There are many other choices for queue implemntations available.
+The queue is used by the fetcher, worker and server, if the server is given the feature of
+submitting resizes of images in the database.
 
 The database should isolate the side effects of writing the images and the
-metadata, this will make testing of everything else much as easier as all
-functions elsewhere should be pure. It is used by everyone. The fetcher
-gives it the initial image and metadata. The worker gives it the newly
-resized images. The server requests metadata and images from the database.
+metadata, this will make testing of everything else much easier as all
+functions elsewhere should be pure. The database is used by the worker and the server
+The worker gives it the newly resized images. The server requests metadata and images 
+from the database.
 
 The implementation of the database component can start as two folders, one for metadata edn
 files and one with folders named by image id, one for each image.
@@ -152,30 +161,29 @@ Ultimately each component can be it's own project and this project would simply
 be a component system configuration with a CLI, and new systems with similar needs could
 use these components as needed.
 
-_I am currently questioning where the original image file should be fetched._
+_I had questions as to where the original image file should be fetched._
 
  * Fetcher - Sort of makes sense. it can send all the initial data to the database then put the work on the queue.
  * Database - also makes some sense, if given a new metadata record, go fetch the image and save it.
  * Worker   - again, when a worker gets a job, if _:original_ is not in the sizes, fetch it, if it is
  available, get it from the database then continue with creating the other sizes,
- wrap it all up with a save to the database. 
+ wrap it all up with a save to the database. *I think this is the winner*
  
- If in the database or the worker, resize threads will have to wait on the arrival of the original. If the fetcher does it, the original should be there by the time the worker needs it.
+ If in the database or the worker, resize threads will have to wait on the arrival of the original. If the fetcher does it, the original should be there by the time the worker needs it. _ok. I still like the worker the best. It's a good fit of functionality._
  
  It feels like more consistent behavior to have it in the worker, since what it is doing is creating new
  images. _:original_ is just a special case that all others depend on.
  
  This makes the fetcher and the database much simpler both in function and in testing.
  The fetcher actually becomes simpler because it doesn't need to talk to the database at
- all.  Only the queue.
- The complexity of the worker is not overly different nor is testing. 
+ all.  Only the queue. The complexity of the worker is not overly different nor is testing. 
 
 ### Fetcher
 
  The job of the fetcher is to get the list of recent image metadata from
  the flickr feed and convert to clojure data which consists of a list
- of image metadata records, update them with the desired _resizes_ which may
- have been passed in by the server.
+ of image metadata records, update them with any desired _resizes_ which may
+ have been passed in a request from the server.
 
  If a count is given limit the retrieval to that count. 
  The default, like the flickr api should be 100 with a maximum of 500. 
@@ -231,26 +239,17 @@ _I am currently questioning where the original image file should be fetched._
  The sizes _:small, :medium, and :large_ are percentage based, aspect ratio preserving.
   
  The fetcher may be told, by the server, which sizes need to be created.
+ in which case it should put them into the resizes vector before giving the image
+ records to the queue.
  
  Otherwise sizes will come from the CLI which the worker has direct access to.
   
  The fetcher should be able to work in one of two modes. By request or in a continuous polling mode
  which may also need to handle a request.
   
- It is possible, that the fetcher could use a go-loop to retrieve the original images
- and send them to the database. But that might not be nice etiquete for Flickr. If it does
- use a go-loop for the goal of spawning multiple fetching processes, it should also have a 
+ If running continuously as a service the fetcher should also have a 
  secondary channel *stop* so that the component can be shutdown gracefully.
- Maybe 8 processes is not so bad...
   
- Upon successful retrieval and writing of the original image file, 
- image records should have a populated _sizes vector_ of _:original_  
- ie. `:sizes [:original]` If given on the command line or by the server's request , 
- `:resizes []` may also have other entries. These metadata records should then
- be given to the queue component for the worker to create the resized images.
- 
- ### A different division of labor.
-
 
 ### Queue
 
@@ -266,12 +265,14 @@ worker will take them.
 ### Database
 
 This component only saves or sends image metadata files and the
-images that go with them.  It might be nice to supply a channel that new image records
-can put into so that the server can watch for them.
+images that go with them.  Since an the database needs the size and the image itself,
+it is probably easist if the worker sends them as a map with keys _:size_ and _:image_.
+Or is it better to simply put them in the metadata file as a list of image maps.
+`[{:image ... :size ...}, ...]`
 
 When giving an image to save,
 the database component should write the image to it's folder which is named after it's id in
-_image-path_ from the CLI. The image should use a filename like so. _<image-id>.original.<format-ext>_
+_image-path_ from the CLI. The image should use a filename like so. _<image-id>.<size>.<format-ext>_
 
 _If there is a possiblity that different image-paths may be used simultaneously the image's
 path should be saved in it's metadata record._ otherwise the database can make the path
@@ -291,10 +292,11 @@ of the format _<id>.<size>.<format>_
 The resulting meta data record should be written to the applications _database-path_ folder
 as indicated by the CLI option of the same name..
 
-A request for recent images should result in the last 100 images in the database.
-this is the same default as Flickr. The database can maintain a list of the 500 most
-recent images for quick response. The Flickr API has a maximum of 500 images which is 
-probably a good limit.
+Unless a count is given a request for recent images should result in the
+last 100 images in the database. This is the same default as Flickr. The
+database can maintain a list of the 500 most recent images for quick
+response. The Flickr API has a maximum of 500 images which is probably
+a good limit.
 
 Additional features might be the ability to archive, or delete images after a certain
 time. or to retain or tag images.
@@ -323,19 +325,19 @@ effects and improve testability.
 Like the fetcher in polling mode, the worker will need a channel for a *stop* 
 signal to enable a graceful shutdown.
  
-This component only needs to create more images sizes as requested 
-by the metadata entries in the queue component. If the resizes vector in an 
-image metadata file is empty and there is an _:original_ size, then there is 
-nothing to do but write the metadata file to the database directory. 
+This component only needs to create more images size as requested 
+by the CLI and resizes vector in the metadata entries in the queue component. 
+It should filter the merged resizes by the available sizes to prevent repeating work. 
+If the resulting resizes vector is empty and there is an _:original_ 
+size, then there is nothing to do. 
  
 On error, the worker should do the appropriate things in signaling the queue
 that the job failed for that entry.
  
-In addition to arbitrary `[height width]` Possible resize values are the following.
+In addition to arbitrary `[height width]` possible resize values are the following.
 `:thumbnail = (150x150), :small = (1/4) :medium = (1/2) and :large = (3/4)`. 
-Each of these images should be written to the image's local path folder.
  
-Before sending the metadata entry to the database component, 
+Before sending the metadata entry and images to the database component, 
 the image's meta data record should be updated with the new sizes and if all is
 successful the _resizes_ vector will be empty.
 
@@ -357,7 +359,7 @@ get the image metadata entries from database component and then do what it wishe
  * The server could request a new size for a group of photos by putting their records in the queue.
  * The server requests quantities and sizes that are known to be available.
  * After a request and display of recent images, the server might request new sizes for those images.
- * THe server might want to request a refresh of the recents if the fetcher isn't going full tilt.
+ * The server might want to request a refresh of the recents if the fetcher isn't going full tilt.
  but it is happy to show the most recent currently in the database.
 *OR*
  * The server always requests recent images and possibly a count and sizes.
