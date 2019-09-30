@@ -424,6 +424,10 @@ of each component in the system.
 
 #### General
 
+My usual work flow is to be in the REPL while working on both code and tests.
+As the code takes form so do the tests. I don't do strict TDD. But an interplay.
+For me this avoids the tedium writing a bunch of unit tests for code that is done.
+
 With components testing can be made much easier by creating component systems which
 consist only of the components required of the test. The CLI can mocked, to create
 settings which would only be used for testing. Such as using a fake URL.
@@ -433,6 +437,7 @@ to test the server and the worker.
 
 Making a snapshots of the data in test-resources, and pointing the components 
 to alternative folders or empty destinations should be done as needed.
+This will make it easier to keep the tests idempotent.
 
 In the case of the worker, a temporary snapshot would allow testing of a submittal
 of resize work for existing images.
@@ -450,7 +455,7 @@ Testing  the fetcher is not too difficult as it only has to download an XML feed
 convert it to a list of records. 
  
 We just need a simple component system which consists only of the fetcher
-component.  
+the component.  
 
 Using a fake XML file with  `file://` url for retrieval should be
 sufficient to fake it out and get some meta data entries for some
@@ -493,7 +498,8 @@ Using components it is also possible to create fake systems, so we can have a te
 ## Fault tolerance
 
 ### The Fetcher
- Here the most likely problem is timeouts. 
+
+ Here my guess is that the most likely cause of problems is timeouts. 
  Log them and adjust the cli default accordingly. Maybe it would be nice
  to have a status file that the server could read and display when it serves
  the images.  Last successful fetch, last failure, success ratio, something
@@ -504,7 +510,8 @@ Using components it is also possible to create fake systems, so we can have a te
 ### The Worker
 
 If a worker thread fails, it is likely a timeout from the fetch of the image or 
-is likely a malformed image in which case all the threads will fail. 
+is likely a malformed image in which case all the resizing will fail. I have
+no idea if this is a real problem or not.
 There are probably scenarios of which I have no idea.
 
 In any case the job should end up back waiting in the queue to be tried again.
@@ -519,6 +526,8 @@ disk space error seems the most likely thing.
 Using components would allow for this executable to behave as a monolithic
 executable, each component with their own processes, but also as independent micro-services with
 a recomposition of the component system definition.  
+
+Using a durable queue allows for decoupling of the fetcher and the worker.
 
 Using [factual's durable queue](https://github.com/Factual/durable-queue)
 is one choice but there are others which use databases
@@ -536,7 +545,8 @@ which might be fun to play with.
 
 I think one step at a time is a good practice. A set of folders for a database of
 edn files and images is a good start, But a real database could be fun. Even
-just datascript or datomic, or even hadoop and cascalog.
+just datascript or datomic, or even hadoop and cascalog, which might be a bit slow,
+but fun.
 
 Decoupling the fetcher and worker would allow for multiple workers to be 
 deployed if the work becomes overwhelming. 
