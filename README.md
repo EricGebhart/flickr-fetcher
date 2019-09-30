@@ -152,12 +152,35 @@ Ultimately each component can be it's own project and this project would simply
 be a component system configuration with a CLI, and new systems with similar needs could
 use these components as needed.
 
+_I am currently questioning where the original image file should be fetched._
+
+ * Fetcher - Sort of makes sense. it can send all the initial data to the database then put the work on the queue.
+ * Database - also makes some sense, if given a new metadata record, go fetch the image and save it.
+ * Worker   - again, when a worker gets a job, if _:original_ is not in the sizes, fetch it, if it is
+ available, get it from the database then continue with creating the other sizes,
+ wrap it all up with a save to the database. 
+ 
+ If in the database or the worker, resize threads will have to wait on the arrival of the original. If the fetcher does it, the original should be there by the time the worker needs it.
+ 
+ It feels like more consistent behavior to have it in the worker, since what it is doing is creating new
+ images. _:original_ is just a special case that all others depend on.
+ 
+ This makes the fetcher and the database much simpler both in function and in testing.
+ The fetcher actually becomes simpler because it doesn't need to talk to the database at
+ all.  Only the queue.
+ The complexity of the worker is not overly different nor is testing. 
+
 ### Fetcher
- The fetcher is a simple component which fetches the recent feed, converts it
- to clojuere data, then retrieves the original images.  If a count is given
- limit the retrieval to that count. The default, like the flickr api should
- be 100 with a maximum of 500. It should give the metadata and the images
- to the database component. 
+
+ The job of the fetcher is to get the list of recent image metadata from
+ the flickr feed and convert to clojure data which consists of a list
+ of image metadata records, update them with the desired _resizes_ which may
+ have been passed in by the server.
+
+ If a count is given limit the retrieval to that count. 
+ The default, like the flickr api should be 100 with a maximum of 500. 
+
+ Send the image records to the queue.
  
  If the fetcher is running in a polling fashion, it should 
  start, on compnonent start, a process (go loop) which watches a 
@@ -166,18 +189,9 @@ use these components as needed.
  [core.async components](https://cb.codes/a-tutorial-of-stuart-sierras-component-for-clojure/) 
  is a well known pattern.
 
- The job of the fetcher is to get the list of recent image metadata from
- the flickr feed and convert it to a list of image metadata records, then fetch
- and give the metadata and original sized image to the database component to be saved.
- 
- If options were given for resizing those values
- should be put into the resizes vector in each metadata record.
- Then give each metadata record to the queue component.
-
  The image metadata record format should be specified in spec
  and is a reflection of the image entry record retrieved from Flickr,
  like this one. 
- 
  
 ```
 <entry>
@@ -209,13 +223,16 @@ use these components as needed.
  The following additional fields are added to the record.
 
   * `:resizes []`     - Sizes that need to be created from this image.
-  * `:sizes []`       - Sizes that currently exist for this image. ie. 
+  * `:sizes []`       - Sizes that currently exist for this image. 
   
  Sizes and resizes are vectors and can have any of the following as values. 
  `:thumbnail, :small, :medium, :large, :original` or any number of `[<height> <width>]`.
+ 
+ The sizes _:small, :medium, and :large_ are percentage based, aspect ratio preserving.
   
- The fetcher will be told which sizes need to be created, either by the CLI or
- by the server when the server requests a new fetch.
+ The fetcher may be told, by the server, which sizes need to be created.
+ 
+ Otherwise sizes will come from the CLI which the worker has direct access to.
   
  The fetcher should be able to work in one of two modes. By request or in a continuous polling mode
  which may also need to handle a request.
@@ -227,17 +244,13 @@ use these components as needed.
  Maybe 8 processes is not so bad...
   
  Upon successful retrieval and writing of the original image file, 
- image records should have a populated sizes vector of _:original_  
+ image records should have a populated _sizes vector_ of _:original_  
  ie. `:sizes [:original]` If given on the command line or by the server's request , 
  `:resizes []` may also have other entries. These metadata records should then
  be given to the queue component for the worker to create the resized images.
  
  ### A different division of labor.
 
- Another possible way to divide responsibilities is to let the database do the fetching
- of the original file when it is requested.  I Like that as it simplifies the fetcher
- and puts the responsibility of the saving and delivering the original image all in one
- place.  ---  *Think on this, and Rewrite*
 
 ### Queue
 
@@ -250,69 +263,81 @@ The fetcher and possible the server will give it image metadata records and the
 worker will take them.
 
 
-# Stopped here.........................................................
-
 ### Database
 
-I am not sure that managing both the metadata files and the image files
-should be the responsibility of this component. But at least now, this 
-makes some sense and it is simple enough.
+This component only saves or sends image metadata files and the
+images that go with them.  It might be nice to supply a channel that new image records
+can put into so that the server can watch for them.
 
 When giving an image to save,
-the database component should write the image to it's _local-path_ in the
-_images-path_ The image should use a filename like so. _<image-id>.original.<format-ext>_
+the database component should write the image to it's folder which is named after it's id in
+_image-path_ from the CLI. The image should use a filename like so. _<image-id>.original.<format-ext>_
 
-A file based database of image metadata files. I simple component which can
-take image meta data files for storage and give the most recent image metadata entries
-in response to a request.
+_If there is a possiblity that different image-paths may be used simultaneously the image's
+path should be saved in it's metadata record._ otherwise the database can make the path
+automatically from the image id as it needs it.
+
+The simpest implementation would be a file (edn) based database of image metadata files. 
+A simple component which can take image meta data files for storage and give the most recent 
+image metadata entries and/or images in response to a request.
 
 Something that might be fun would be to load the metadata files into a datascript
 db at component initialization. That could provide some fun things to play with.
 
-Optionally I suppose we could give it the responsibility of returning images when
-asked for.
+The final database folder should consist of edn files named after the image
+id.  All of the image's sizes will resized in an image's folder. Image names should be 
+of the format _<id>.<size>.<format>_
 
- The final database folder should consist of edn files named after the image
- id.  All images will resized in an images _local-path_. Image names should be 
- of the format _<id>.<size>.<format>_
-
- The resulting meta data record should be written to the applications _image-db_ folder
- as indicated by the CLI option `database-path`. This is a point of future improvement either
- by replacement with a real DB or sub-division of folders by some date interval.
+The resulting meta data record should be written to the applications _database-path_ folder
+as indicated by the CLI option of the same name..
 
 A request for recent images should result in the last 100 images in the database.
-this is the same default as Flickr. Flickr has a maximum of 500 images which is 
-also probably a good limit.
+this is the same default as Flickr. The database can maintain a list of the 500 most
+recent images for quick response. The Flickr API has a maximum of 500 images which is 
+probably a good limit.
+
+Additional features might be the ability to archive, or delete images after a certain
+time. or to retain or tag images.
 
 ### Worker
 
- By the time we get here, we have the original image in it's folder and a nice 
- metadata record about the image.
+Everything is still fresh at this point.  We have the CLI resizes options and we have
+an image metadata record potentially with some resize values. Those should be merged with
+the resize values from the CLI. If there is no _:original_ size in the _sizes vector_ it 
+will need to be fetched, if there is an _:original_ entry then the database can give it 
+to us.
 
- If the worker should probably just be a go-loop which takes from the queue
- component.  It is probably sufficient to call a function for each image which
- then does a pmap to get the resized images. I would keep these pure. and then
- write the images and update the metadata record and write it to the database
- all in the same function, to isolate the side effects and improve testability.
+This seems, at this moment, to make the most sense over having the the fetcher or the database
+retrieve the original image. It fits nicely into the mechanism that the worker must have anyway.
+This original image could be provided as a _promise_ to threads to do the resizing,
+or maybe just go get it and after that do a simple pmap for the rest. This will be called
+from a go-loop so it's already it's own process.  Keep it simple until it can't be.
  
- Like the fetcher in polling mode, the worker will need a channel for a *stop* 
- signal to enable a graceful shutdown.
+The worker should probably just be a go-loop which takes from the queue
+component.  It is probably sufficient to call a function for each image which
+then does a pmap to get the resized images. Then send the images along
+with an updated metadata record to the database component. An effort
+should be made to keep functions pure in order to isolate the side
+effects and improve testability.
  
- This component only needs to create more images sizes as requested 
- by the metadata entries in the queue component.
- If the resizes vector in an image metadata file is empty there is nothing to
- do but write the metadata file to the database directory.
+Like the fetcher in polling mode, the worker will need a channel for a *stop* 
+signal to enable a graceful shutdown.
  
- On error, the worker should do the appropriate things in signaling the queue
- that the job failed for that entry.
+This component only needs to create more images sizes as requested 
+by the metadata entries in the queue component. If the resizes vector in an 
+image metadata file is empty and there is an _:original_ size, then there is 
+nothing to do but write the metadata file to the database directory. 
  
- In addition to arbitrary `[height width]` Possible resize values are the following.
- `:thumbnail = (150x150), :small = (1/4) :medium = (1/2) and :large = (3/4)`. 
- Each of these images should be written to the image's local path folder.
+On error, the worker should do the appropriate things in signaling the queue
+that the job failed for that entry.
  
- Before sending the metadata entry to the database component, 
- the image's meta data record should be updated with the new sizes and if all is
- successful the _resizes_ vector will be empty.
+In addition to arbitrary `[height width]` Possible resize values are the following.
+`:thumbnail = (150x150), :small = (1/4) :medium = (1/2) and :large = (3/4)`. 
+Each of these images should be written to the image's local path folder.
+ 
+Before sending the metadata entry to the database component, 
+the image's meta data record should be updated with the new sizes and if all is
+successful the _resizes_ vector will be empty.
 
 ### Server
 
@@ -321,41 +346,36 @@ with a nice swagger api document.
 The server should show the most recent images in the images directory. The server can 
 get the image metadata entries from database component and then do what it wishes. 
 
+*Questions*
+ * Does the server always request a new fetch ?
+ * Is the server happy with what it can get from DB without a new fetch ?
+ * Does the server need to ask the fetcher to do work ?
+ * Should the data base provide a channel for incoming images for the server to watch ?
+ 
+*Possibilities*s
+ * The server doesn't worry about how _recent_ the images are. 
+ * The server could request a new size for a group of photos by putting their records in the queue.
+ * The server requests quantities and sizes that are known to be available.
+ * After a request and display of recent images, the server might request new sizes for those images.
+ * THe server might want to request a refresh of the recents if the fetcher isn't going full tilt.
+ but it is happy to show the most recent currently in the database.
+*OR*
+ * The server always requests recent images and possibly a count and sizes.
+ 
+My preference would be to decouple the server from the backend, with the ability to
+spawn new fetches which would be undectable to the user. 
+ 
 Options to the end point are count and size. The possible
-sizes are thumbnail, small, medium, large, original or an arbitrary [height width].  
+sizes are _thumbnail, small, medium, large, original_ or an arbitrary _[height width]_.  
 if no quantity or size was given the server would simply get the 
 last 100 metadata records from the database component. 
 
 It might be nice to render the meta data along with the images
 so that the links can be followed to the photographer among other things.
- 
-The request for this project was that the when asked, the server would cause a retrieval of
-the most recent records and deliver the quantity requested in the size requested.
-
-As designed, these components can do much more. 
-For this simple behavior it is only necessary for the server to ask the fetcher 
-to initiate a fetch for the given size of images. As the image metadata records 
-appear in the database folder the server could then render the quantity asked for.
- 
-I think this behavior will be slow. I also wonder about the true desire of
-being able to resize to any height or width. This will cause the loss of
-aspect ratio in a somewhat random way, which the _:thumbnail_ size certainly does.
-I've added the small, medium, large sizes in order to allow resizing which honors
-the original aspect ratio of the images.
- 
-Another method would be to let the fetcher run in a polling mode such that images are
-constantly being retrieved over a time interval. In this way, everything is much simpler
-and server only needs to worry about serving whatever is already there. 
-
-In this situation the server only needs to know about the meta data records and show 
-the most recent images. If a size does not exist, the server can give the meta-data records 
-with the appropriate resize values to the queue component, and then wait
-for them to reappear in the database with their new sizes.
- 
 The meta-data records have a lot of additional information which allow for
 the creation of a nice interface including filtering. 
 
-If needed other options could be added such as photographer/user etc. 
+If needed other endpoint options could be added such as photographer/user, filtering on size, etc. 
  
 ### CLI
 
@@ -384,7 +404,7 @@ grows it does make good sense.
    * database-path
    * image-path
  * Worker
-    * sizes <[:thumbnail :small :medium :large [x y] ...]>
+    * sizes <[:thumbnail :small :medium :large [x y] ...]>  with a wA minimum of [:original]
  * server
      
  
@@ -409,7 +429,7 @@ settings which would only be used for testing. Such as using a fake URL.
 A sample database and image folders to match should be created in test-resources
 to test the server and the worker.
 
-Making a snapshots of the data in test-resources, and pointing the the components 
+Making a snapshots of the data in test-resources, and pointing the components 
 to alternative folders or empty destinations should be done as needed.
 
 In the case of the worker, a temporary snapshot would allow testing of a submittal
@@ -419,39 +439,54 @@ For testing of new work from a skeleton set of meta data files and their
 matching image folders/images it would only be necessary to point the worker at some new
 database folder that would be removed before each test run.
 
-#### Testing the fetcher
- Testing  the fetcher is not too difficult as it only has to download an image
- and create an edn file that we can validate with spec.
- 
- We just need a simple component system which consists only of the fetcher
- component.  
+For testing of filesystem problems it might be nice to a have a very small partition
+mounted somewhere so that out of disk space errors would be easy to create.  This would
+be easy to do with a VM.
 
- Using a fake XML file with  `file://` url for retrieval should be
- sufficient to fake it out and get some meta data entries for some
- images also located in test-resources.
+#### Testing the fetcher
+Testing  the fetcher is not too difficult as it only has to download an XML feed and
+convert it to a list of records. 
  
- The use of fake data and a fake url avoids querying flicker for the xml 
- which would be changing continuously,
- Maybe we need one test to make sure the interface with flickr hasn't changed.
+We just need a simple component system which consists only of the fetcher
+component.  
+
+Using a fake XML file with  `file://` url for retrieval should be
+sufficient to fake it out and get some meta data entries for some
+images also located in test-resources.
+ 
+The use of fake data and a fake url avoids querying flicker for the xml 
+which would be changing continuously, it can also be reused to test the rest
+of the system. 
+
+We also have spec, which can help with this.
+
+Maybe we need one test to make sure the interface with flickr hasn't changed.
+
+#### Testing the queue
+
+There probably won't be much to do here if we are using a queuing library.
+Make sure any additional interfaces work.
  
 #### Testing the worker
 
 Again, here we have our meta-data file to validate, to make sure the files are
 created, and that the updates to the metadata file are correct.
 
-A testing system that consists only of the worker component with a fake metadata
+A testing system that consists only of the worker and queue components with a fake metadata
 file in the work directory using a static image from test-resources should be
-sufficient to construct reasonable tests.
+sufficient to construct reasonable tests. Until it gets to the end
+where integration with the database needs to be tested as well.
 
 ### testing the server
 
 Probably the easist way to test this is to create a fake database and image folder
-in test res
-This can be simplified some by using the CLI interface.  By providing default urls and behaviors in the
-cli tree, which the components use for their startup, we can overide those values for testing.
-The first thing that comes to mind is using a static file url which points to an XML image entry list in test resources.
+in test resources. After testing the fetcher, queue and worker, 
+we should have the code to set this up from our test-resources snapshot.
+Or just have a database snapshot sitting there.
 
-Using components it is also possible to create fake systems, so we can have a test-fetcher component which feeds the worker component, or a test-worker component which only validates what the fetcher component creates.
+Send the database some records and images, and then query them back out.
+
+Using components it is also possible to create fake systems, so we can have a test-fetcher component which feeds the worker component, or a test-worker component which only validates what the fetcher component creates. Or a test-worker and test-server which can give the database a workout.
 
 ## Fault tolerance
 
@@ -462,40 +497,34 @@ Using components it is also possible to create fake systems, so we can have a te
  the images.  Last successful fetch, last failure, success ratio, something
  not too alarming, but informative.
 
+[resiliance4clj](https://github.com/resilience4clj) looks like a nice way to handle this kind of thing.
+
 ### The Worker
 
-If a worker thread fails, it is likely a malformed image in which case
-all the threads will fail, or a filesystem error. In the case of resizing
-problem, the job should be re-submitted for a retry since it is likely
-a malformed image. If this route is taken, keeping a count of retries in
-the metadata file might be a good idea to limit the attempts. 
-Also, maybe there is a checksum that we can apply to check the validity of the
-image before we try to do any processing.
+If a worker thread fails, it is likely a timeout from the fetch of the image or 
+is likely a malformed image in which case all the threads will fail. 
+There are probably scenarios of which I have no idea.
 
-If the threads do the writing, which seems reasonable, the failure could be disk space
-or another filesystem error.
-In this case, for this simple project, it seems most reasonable to try to write the 
-original edn file to a log or failure directory or both. Without a more fault tolerant queuing 
-system in place that seems reasonable.  A recovery option on the CLI could recover
-those edn files and submit them for reprocessing once the problems are resolved.
+In any case the job should end up back waiting in the queue to be tried again.
 
-On the other hand, for a toy project, how much do we care if we miss a few images as
-long as it doesn't continue to be chronic problem ?
+### The database
 
-Testing: The biggest problem here is likely to be malformed images or some sort of
-file system error.
-
-[resiliance4clj](https://github.com/resilience4clj) looks like a nice way to handle this kind of thing.
+It seems the biggest problem here is file I/O.  I could be wrong. But an out of
+disk space error seems the most likely thing.
 
 ### A monolith, or micro-services, and other improvements.
 
 Using components would allow for this executable to behave as a monolithic
-executable, each with their own threads, but also as independent micro-services with
+executable, each component with their own processes, but also as independent micro-services with
 a recomposition of the component system definition.  
 
-This design uses folders as a work queue which works,
-But it might also be nice to use something like [factual's durable queue](https://github.com/Factual/durable-queue), or one of the other [mysql] (https://github.com/wildbit/mysql-queue), [postgres](https://github.com/layerware/pgqueue) or [stockpile](https://github.com/puppetlabs/stockpile)
-durable queues. [Onyx](https://www.onyxplatform.org), [kafka](https://kafka.apache.org) or
+Using [factual's durable queue](https://github.com/Factual/durable-queue)
+is one choice but there are others which use databases
+like [mysql] (https://github.com/wildbit/mysql-queue)
+or [postgres](https://github.com/layerware/pgqueue) or
+[stockpile](https://github.com/puppetlabs/stockpile) durable queues. 
+
+[Onyx](https://www.onyxplatform.org), [kafka](https://kafka.apache.org) or
 another network based queue seems like overkill, unless it is desirable
 to learn those here. Why not?  Except that it's more than I want to do 
 for a code challenge.
@@ -504,11 +533,8 @@ There are numerous [pre-built components here](http://github.com/danielsz/system
 which might be fun to play with.
 
 I think one step at a time is a good practice. A set of folders for a database of
-edn files and images is a good start,
-
-Rearranging the components to optionally use a durable queueing system
-that would allow for micro-services and better/easier fault tolerance
-later on would be easy to factor in. 
+edn files and images is a good start, But a real database could be fun. Even
+just datascript or datomic, or even hadoop and cascalog.
 
 Decoupling the fetcher and worker would allow for multiple workers to be 
 deployed if the work becomes overwhelming. 
@@ -518,14 +544,14 @@ with clj-cli-ext keeping in mind the options that would be needed
 later to grow this application in these directions. Component sub options
 are easy to configure in the CLI.
 
-
-
  
- 
+## Conclusion
 
-
- 
- 
+I am sure I have missed some things here. I prefer to work in a space where bouncing ideas
+off of other people is the norm. I ame sure that others would have different and sometimes
+better ideas. Often the best results are born of a synergy of different ideas. When I see
+the design simplifying that is a good sign. As I wrote this. That is what happened. Still
+I am sure with other people's input it could be better.
  
 
 
