@@ -25,15 +25,24 @@ necessary as Flickr has alread done that work.
 ## initial thoughts and information.
 
 It feels a little strange to compose a design document in as a solitary
-designer. I would prefer some interaction with other developers. I like
-this idea much more than writitng some code, in that at least you will
-see some of how I think.  This has also turned into somewhat of a monster,
+designer. I would prefer some interaction with other developers. Although 
+I like this idea much more than writitng some code in that at least you will
+see some of how I think.  
+
+This has also turned into somewhat of a monster, each morning I wake up and I
+have more idea's or a thought to add. Or some thing that I shuld remove because
+it's completely unecessary if I do X over there.
+
 I don't like documents that say to do something one way or another unless
 there is good reason, which would usually mean there was a consensus of the
-team that some method or feature was very important. So as I wrote this
-I gave links to examples, or possible librariees, things I have used or
-things that seem interesting that could be used. So this is not
-just a design document. I tried to give some idea of my thinking and at
+team that some method or feature was very important. But because we don't know
+each other, as I wrote this I thought of it as documentation for things to try,
+things to research that might be a good fit here and there. I gave links to examples, 
+or possible librariees, things I have used or things that seem interesting that could 
+be used. It's a sort of substitute for the conversation about tooling and libraries
+that we might have as a team.
+
+So this is not just a design document. I tried to give some idea of my thinking and at
 the same time resources for later in case I or someone else decides to
 code this thing which seems pretty interesting at this point.
 
