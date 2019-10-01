@@ -24,6 +24,19 @@ necessary as Flickr has alread done that work.
  
 ## initial thoughts and information.
 
+It feels a little strange to compose a design document in as a solitary
+designer. I would prefer some interaction with other developers. I like
+this idea much more than writitng some code, in that at least you will
+see some of how I think.  This has also turned into somewhat of a monster,
+I don't like documents that say to do something one way or another unless
+there is good reason, which would usually mean there was a consensus of the
+team that some method or feature was very important. So as I wrote this
+I gave links to examples, or possible librariees, things I have used or
+things that seem interesting that could be used. So this is not
+just a design document. I tried to give some idea of my thinking and at
+the same time resources for later in case I or someone else decides to
+code this thing which seems pretty interesting at this point.
+
 The method used for resizing is not important. A webservice or one of many
 clojure libraries can be used.  Likewise the server side does not seem to
 be so important, as it is possible to get an endpoint with these simple
@@ -55,6 +68,15 @@ easily replaced by a different implementation or the component system
 could be rearranged to create a family of microservices. 
 Component also makes it easier to test by allowing the creation of
 alternative systems for testing.
+
+All that said, I wonder if components or mount are a good fit. Maybe not.
+This system doesn't have a lot of state.
+
+Communication between the pieces / components can be simple functions or channels. My
+thought is that the system state will not change once it is running. I could be wrong.
+Component/Mount are mostly about maintaining system state. But they are also a nice 
+compartmentalization of the parts, so in that way it did help with the design thinking.
+Even if they are not actually necessary.
 
 ## Questioning the request and Enabling more flexibility
 
